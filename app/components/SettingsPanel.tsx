@@ -104,7 +104,7 @@ export default function SettingsPanel({
           <section>
             <h3 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
               <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-500/20 text-sky-400 text-xs font-bold">𝕏</span>
-              Twitter / X Accounts
+              Reporters / People
             </h3>
 
             <div className="flex gap-2 mb-3">
@@ -116,7 +116,7 @@ export default function SettingsPanel({
                   value={newAccount}
                   onChange={(e) => setNewAccount(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && addAccount()}
-                  placeholder="username"
+                  placeholder="e.g. ShamsCharania"
                   className="w-full rounded-lg bg-gray-800 border border-gray-700 pl-7 pr-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
                 />
               </div>
@@ -129,7 +129,7 @@ export default function SettingsPanel({
             </div>
 
             {accounts.length === 0 ? (
-              <p className="text-sm text-gray-500 italic">No accounts added yet.</p>
+              <p className="text-sm text-gray-500 italic">No reporters added yet.</p>
             ) : (
               <div className="flex flex-wrap gap-2">
                 {accounts.map((a) => (
@@ -147,7 +147,7 @@ export default function SettingsPanel({
                 ))}
               </div>
             )}
-            <p className="mt-2 text-xs text-gray-600">Feeds load via Nitter RSS — availability may vary.</p>
+            <p className="mt-2 text-xs text-gray-600">Searches Google News by name — works best for reporters & journalists.</p>
           </section>
 
           {/* Bleacher Report Teams */}

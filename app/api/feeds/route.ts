@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Parser from "rss-parser";
-import { NITTER_INSTANCES, BR_TEAMS } from "@/lib/constants";
+import { BR_TEAMS } from "@/lib/constants";
 import type { FeedItem } from "@/lib/types";
 
 const parser = new Parser({
@@ -44,36 +44,38 @@ function cleanTitle(title: string): string {
 }
 
 async function fetchTwitterFeed(username: string): Promise<FeedItem[]> {
-  for (const instance of NITTER_INSTANCES) {
-    try {
-      const url = `${instance}/${username}/rss`;
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
-      const res = await fetch(url, {
-        signal: controller.signal,
-        headers: { "User-Agent": "SportsFeedReader/1.0" },
-        next: { revalidate: 900 },
-      });
-      clearTimeout(timeout);
-      if (!res.ok) continue;
-      const text = await res.text();
-      const feed = await parser.parseString(text);
-      return (feed.items as RawItem[]).map((item, i) => ({
-        id: `tw-${username}-${i}-${item.pubDate ?? ""}`,
-        title: item.title ?? "(no title)",
-        link: item.link ?? "#",
-        pubDate: item.pubDate ? new Date(item.pubDate).toISOString() : new Date().toISOString(),
-        snippet: item.contentSnippet?.slice(0, 200),
-        imageUrl: extractImage(item),
-        source: "twitter" as const,
-        sourceLabel: `@${username}`,
-        author: username,
-      }));
-    } catch {
-      // try next instance
-    }
+  // Nitter is universally down as of 2026; use Google News search by username/name instead
+  const query = username.replace(/([a-z])([A-Z])/g, "$1 $2"); // "ShamsCharania" → "Shams Charania"
+  const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { "User-Agent": "SportsFeedReader/1.0" },
+      next: { revalidate: 900 },
+    });
+    clearTimeout(timeout);
+    if (!res.ok) return [];
+
+    const text = await res.text();
+    const feed = await parser.parseString(text);
+
+    return (feed.items as RawItem[]).map((item, i) => ({
+      id: `tw-${username}-${i}-${item.pubDate ?? ""}`,
+      title: item.title ? cleanTitle(item.title) : "(no title)",
+      link: item.link ?? "#",
+      pubDate: item.pubDate ? new Date(item.pubDate).toISOString() : new Date().toISOString(),
+      snippet: item.contentSnippet?.slice(0, 200),
+      imageUrl: extractImage(item),
+      source: "twitter" as const,
+      sourceLabel: `@${username}`,
+      author: username,
+    }));
+  } catch {
+    return [];
   }
-  return [];
 }
 
 async function fetchTeamFeed(slug: string): Promise<FeedItem[]> {
