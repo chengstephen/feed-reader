@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import Parser from "rss-parser";
 import { BR_TEAMS } from "@/lib/constants";
 import { getScraper } from "@/lib/twitter";
+import { getCached, getStale, setCached } from "@/lib/tweet-cache";
 import type { FeedItem } from "@/lib/types";
 
 const parser = new Parser({
@@ -45,7 +46,11 @@ function cleanTitle(title: string): string {
 }
 
 async function fetchTwitterFeed(username: string): Promise<FeedItem[]> {
-  const TIMEOUT_MS = 20000;
+  // Return fresh cache if available (avoids hitting Twitter rate limits)
+  const cached = getCached(username);
+  if (cached) return cached;
+
+  const TIMEOUT_MS = 25000;
 
   const fetchTweets = async (): Promise<FeedItem[]> => {
     const s = await getScraper();
@@ -79,9 +84,16 @@ async function fetchTwitterFeed(username: string): Promise<FeedItem[]> {
         setTimeout(() => reject(new Error(`Timeout after ${TIMEOUT_MS}ms`)), TIMEOUT_MS)
       ),
     ]);
+    if (result.length > 0) setCached(username, result);
     return result;
   } catch (err) {
     console.error(`Twitter fetch failed for @${username}:`, (err as Error).message);
+    // Return stale cache if we have it rather than falling back to Google News
+    const stale = getStale(username);
+    if (stale && stale.length > 0) {
+      console.log(`Using stale cache for @${username} (${stale.length} tweets)`);
+      return stale;
+    }
     return fetchTwitterFallback(username);
   }
 }

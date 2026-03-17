@@ -36,6 +36,9 @@ yarn-error.log*
 # Twitter session cookies — never commit
 .twitter-cookies.json
 
+# Tweet cache — local only
+.tweet-cache.json
+
 # vercel
 .vercel
 
