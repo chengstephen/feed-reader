@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Parser from "rss-parser";
 import { BR_TEAMS } from "@/lib/constants";
+import { getScraper } from "@/lib/twitter";
 import type { FeedItem } from "@/lib/types";
 
 const parser = new Parser({
@@ -44,26 +45,48 @@ function cleanTitle(title: string): string {
 }
 
 async function fetchTwitterFeed(username: string): Promise<FeedItem[]> {
-  // Nitter is universally down as of 2026; use Google News search by username/name instead
-  const query = username.replace(/([a-z])([A-Z])/g, "$1 $2"); // "ShamsCharania" → "Shams Charania"
-  const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
-
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: { "User-Agent": "SportsFeedReader/1.0" },
-      next: { revalidate: 900 },
-    });
-    clearTimeout(timeout);
+    const s = await getScraper();
+    const tweets: FeedItem[] = [];
+
+    for await (const tweet of s.getTweets(username, 40)) {
+      if (!tweet.id || !tweet.text) continue;
+      const pubDate = tweet.timeParsed
+        ? tweet.timeParsed.toISOString()
+        : new Date().toISOString();
+
+      const photo = tweet.photos?.[0]?.url;
+      const video = tweet.videos?.[0]?.preview;
+
+      tweets.push({
+        id: `tw-${username}-${tweet.id}`,
+        title: tweet.text.slice(0, 140),
+        link: `https://x.com/${username}/status/${tweet.id}`,
+        pubDate,
+        snippet: tweet.text.length > 140 ? tweet.text : undefined,
+        imageUrl: photo ?? video,
+        source: "twitter" as const,
+        sourceLabel: `@${username}`,
+        author: tweet.name ?? username,
+      });
+    }
+
+    return tweets;
+  } catch (err) {
+    console.error(`Twitter scraper failed for @${username}, falling back to Google News:`, err);
+    return fetchTwitterFallback(username);
+  }
+}
+
+async function fetchTwitterFallback(username: string): Promise<FeedItem[]> {
+  const query = username.replace(/([a-z])([A-Z])/g, "$1 $2");
+  const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
+  try {
+    const res = await fetch(url, { headers: { "User-Agent": "SportsFeedReader/1.0" }, next: { revalidate: 900 } });
     if (!res.ok) return [];
-
-    const text = await res.text();
-    const feed = await parser.parseString(text);
-
+    const feed = await parser.parseString(await res.text());
     return (feed.items as RawItem[]).map((item, i) => ({
-      id: `tw-${username}-${i}-${item.pubDate ?? ""}`,
+      id: `tw-${username}-fallback-${i}-${item.pubDate ?? ""}`,
       title: item.title ? cleanTitle(item.title) : "(no title)",
       link: item.link ?? "#",
       pubDate: item.pubDate ? new Date(item.pubDate).toISOString() : new Date().toISOString(),
@@ -71,7 +94,6 @@ async function fetchTwitterFeed(username: string): Promise<FeedItem[]> {
       imageUrl: extractImage(item),
       source: "twitter" as const,
       sourceLabel: `@${username}`,
-      author: username,
     }));
   } catch {
     return [];
