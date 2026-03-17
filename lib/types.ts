@@ -6,16 +6,11 @@ export interface FeedItem {
   snippet?: string;
   imageUrl?: string;
   source: "twitter" | "bleacher-report";
-  sourceLabel: string; // e.g. "@KingJames" or "NBA"
+  sourceLabel: string; // e.g. "@KingJames" or "LA Lakers"
   author?: string;
-}
-
-export interface BRSport {
-  slug: string;
-  label: string;
 }
 
 export interface FeedConfig {
   twitterAccounts: string[]; // usernames without @
-  brSports: string[]; // slugs
+  brTeams: string[]; // slugs e.g. "los-angeles-lakers"
 }

@@ -5,11 +5,11 @@ import useSWR from "swr";
 import DateTabs from "./components/DateTabs";
 import FeedCard from "./components/FeedCard";
 import SettingsPanel from "./components/SettingsPanel";
-import { DEFAULT_BR_SPORTS, DEFAULT_TWITTER_ACCOUNTS, DAYS_SHOWN } from "@/lib/constants";
+import { DEFAULT_BR_TEAMS, DEFAULT_TWITTER_ACCOUNTS, DAYS_SHOWN, REFRESH_INTERVAL_MS } from "@/lib/constants";
+import { BR_TEAMS } from "@/lib/constants";
 import type { FeedItem } from "@/lib/types";
 
 const STORAGE_KEY = "feed-reader-config";
-const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 function dayStart(daysAgo: number): Date {
   const d = new Date();
@@ -36,11 +36,11 @@ function itemsForDay(items: FeedItem[], daysAgo: number): FeedItem[] {
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
-function buildUrl(twitterAccounts: string[], brSports: string[]): string | null {
-  if (twitterAccounts.length === 0 && brSports.length === 0) return null;
+function buildUrl(twitterAccounts: string[], brTeams: string[]): string | null {
+  if (twitterAccounts.length === 0 && brTeams.length === 0) return null;
   const params = new URLSearchParams();
   if (twitterAccounts.length) params.set("twitter", twitterAccounts.join(","));
-  if (brSports.length) params.set("br", brSports.join(","));
+  if (brTeams.length) params.set("br", brTeams.join(","));
   return `/api/feeds?${params.toString()}`;
 }
 
@@ -51,9 +51,13 @@ function formatCountdown(ms: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+function teamLabel(slug: string): string {
+  return BR_TEAMS.find((t) => t.slug === slug)?.label ?? slug;
+}
+
 export default function HomePage() {
   const [twitterAccounts, setTwitterAccounts] = useState<string[]>(DEFAULT_TWITTER_ACCOUNTS);
-  const [brSports, setBrSports] = useState<string[]>(DEFAULT_BR_SPORTS);
+  const [brTeams, setBrTeams] = useState<string[]>(DEFAULT_BR_TEAMS);
   const [configLoaded, setConfigLoaded] = useState(false);
   const [selectedDay, setSelectedDay] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
@@ -67,7 +71,7 @@ export default function HomePage() {
       if (raw) {
         const config = JSON.parse(raw);
         if (config.twitterAccounts) setTwitterAccounts(config.twitterAccounts);
-        if (config.brSports) setBrSports(config.brSports);
+        if (config.brTeams) setBrTeams(config.brTeams);
       }
     } catch {}
     setConfigLoaded(true);
@@ -85,7 +89,7 @@ export default function HomePage() {
     return () => clearInterval(id);
   }, []);
 
-  const url = configLoaded ? buildUrl(twitterAccounts, brSports) : null;
+  const url = configLoaded ? buildUrl(twitterAccounts, brTeams) : null;
 
   const { data, error, isLoading, mutate } = useSWR<{ items: FeedItem[] }>(
     url,
@@ -105,10 +109,10 @@ export default function HomePage() {
     mutate();
   }, [mutate]);
 
-  const handleSaveSettings = useCallback((accounts: string[], sports: string[]) => {
+  const handleSaveSettings = useCallback((accounts: string[], teams: string[]) => {
     setTwitterAccounts(accounts);
-    setBrSports(sports);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ twitterAccounts: accounts, brSports: sports }));
+    setBrTeams(teams);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ twitterAccounts: accounts, brTeams: teams }));
     nextRefreshAt.current = Date.now() + REFRESH_INTERVAL_MS;
     setCountdown(REFRESH_INTERVAL_MS);
   }, []);
@@ -117,7 +121,7 @@ export default function HomePage() {
   const countsByDay = Array.from({ length: DAYS_SHOWN }, (_, i) => itemsForDay(allItems, i).length);
   const visibleItems = itemsForDay(allItems, selectedDay);
 
-  const hasNoConfig = twitterAccounts.length === 0 && brSports.length === 0;
+  const hasNoConfig = twitterAccounts.length === 0 && brTeams.length === 0;
 
   return (
     <main className="min-h-screen bg-gray-950 text-gray-100">
@@ -182,9 +186,9 @@ export default function HomePage() {
                   @{a}
                 </span>
               ))}
-              {brSports.map((s) => (
-                <span key={s} className="rounded-full bg-orange-500/10 px-2.5 py-0.5 text-xs text-orange-400 border border-orange-500/20">
-                  {s.toUpperCase()}
+              {brTeams.map((slug) => (
+                <span key={slug} className="rounded-full bg-orange-500/10 px-2.5 py-0.5 text-xs text-orange-400 border border-orange-500/20">
+                  {teamLabel(slug)}
                 </span>
               ))}
             </div>
@@ -193,7 +197,7 @@ export default function HomePage() {
       </header>
 
       <div className="mx-auto max-w-3xl px-4 py-5">
-        {/* Empty state — no config */}
+        {/* Empty state */}
         {hasNoConfig && (
           <div className="mt-20 flex flex-col items-center text-center">
             <div className="mb-4 rounded-full bg-gray-800 p-5">
@@ -203,7 +207,7 @@ export default function HomePage() {
             </div>
             <h2 className="text-lg font-semibold text-gray-200 mb-1">No feeds configured</h2>
             <p className="text-sm text-gray-500 mb-6 max-w-xs">
-              Add Twitter accounts or Bleacher Report sports categories to start reading.
+              Add Twitter accounts or Bleacher Report teams to start reading.
             </p>
             <button
               onClick={() => setShowSettings(true)}
@@ -226,18 +230,15 @@ export default function HomePage() {
             <div className="mt-5">
               {isLoading && (
                 <div className="space-y-3">
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <div
-                      key={i}
-                      className="h-20 rounded-xl bg-gray-800 animate-pulse"
-                    />
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <div key={i} className="h-20 rounded-xl bg-gray-800 animate-pulse" />
                   ))}
                 </div>
               )}
 
               {error && (
                 <div className="rounded-xl border border-red-900/50 bg-red-950/30 p-4 text-sm text-red-400">
-                  Failed to load feeds. Check your network connection and try refreshing.
+                  Failed to load feeds. Check your connection and try refreshing.
                 </div>
               )}
 
@@ -265,7 +266,7 @@ export default function HomePage() {
       {showSettings && (
         <SettingsPanel
           twitterAccounts={twitterAccounts}
-          brSports={brSports}
+          brTeams={brTeams}
           onSave={handleSaveSettings}
           onClose={() => setShowSettings(false)}
         />
