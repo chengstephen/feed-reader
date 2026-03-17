@@ -109,19 +109,20 @@ async function fetchTwitterFallback(username: string): Promise<FeedItem[]> {
 }
 
 async function fetchTeamFeed(slug: string): Promise<FeedItem[]> {
-  // Resolve human-readable team name from slug for the search query
   const team = BR_TEAMS.find((t) => t.slug === slug);
   const label = team?.label ?? slug.replace(/-/g, " ");
-  const query = team ? `${team.label} ${team.sport}` : label;
 
-  const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
+  // Use ESPN team-specific RSS feed
+  const url = team
+    ? `https://www.espn.com/espn/rss/${team.espnLeague}/news?team=${team.espnId}`
+    : `https://news.google.com/rss/search?q=${encodeURIComponent(label)}&hl=en-US&gl=US&ceid=US:en`;
 
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
     const res = await fetch(url, {
       signal: controller.signal,
-      headers: { "User-Agent": "SportsFeedReader/1.0" },
+      headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" },
       next: { revalidate: 900 },
     });
     clearTimeout(timeout);

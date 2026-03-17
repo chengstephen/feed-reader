@@ -62,6 +62,7 @@ export default function HomePage() {
   const [selectedDay, setSelectedDay] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [countdown, setCountdown] = useState(REFRESH_INTERVAL_MS);
+  const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set());
   const nextRefreshAt = useRef(Date.now() + REFRESH_INTERVAL_MS);
 
   // Load config from localStorage
@@ -117,9 +118,21 @@ export default function HomePage() {
     setCountdown(REFRESH_INTERVAL_MS);
   }, []);
 
+  const toggleFilter = useCallback((label: string) => {
+    setActiveFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  }, []);
+
   const allItems = data?.items ?? [];
+  const dayItems = itemsForDay(allItems, selectedDay);
+  const visibleItems = activeFilters.size > 0
+    ? dayItems.filter((item) => activeFilters.has(item.sourceLabel))
+    : dayItems;
   const countsByDay = Array.from({ length: DAYS_SHOWN }, (_, i) => itemsForDay(allItems, i).length);
-  const visibleItems = itemsForDay(allItems, selectedDay);
 
   const hasNoConfig = twitterAccounts.length === 0 && brTeams.length === 0;
 
@@ -177,20 +190,56 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Active feeds summary */}
+        {/* Filter chips */}
         {!hasNoConfig && (
           <div className="border-t border-gray-800/60 px-4 py-2">
-            <div className="mx-auto max-w-3xl flex flex-wrap gap-1.5">
-              {twitterAccounts.map((a) => (
-                <span key={a} className="rounded-full bg-sky-500/10 px-2.5 py-0.5 text-xs text-sky-400 border border-sky-500/20">
-                  @{a}
-                </span>
-              ))}
-              {brTeams.map((slug) => (
-                <span key={slug} className="rounded-full bg-orange-500/10 px-2.5 py-0.5 text-xs text-orange-400 border border-orange-500/20">
-                  {teamLabel(slug)}
-                </span>
-              ))}
+            <div className="mx-auto max-w-3xl flex flex-wrap gap-1.5 items-center">
+              {activeFilters.size > 0 && (
+                <button
+                  onClick={() => setActiveFilters(new Set())}
+                  className="rounded-full bg-gray-700 px-2.5 py-0.5 text-xs text-gray-300 border border-gray-600 hover:bg-gray-600 transition"
+                >
+                  Clear
+                </button>
+              )}
+              {twitterAccounts.map((a) => {
+                const label = `@${a}`;
+                const active = activeFilters.has(label);
+                return (
+                  <button
+                    key={a}
+                    onClick={() => toggleFilter(label)}
+                    className={`rounded-full px-2.5 py-0.5 text-xs border transition ${
+                      active
+                        ? "bg-sky-500 text-white border-sky-500"
+                        : activeFilters.size > 0
+                        ? "bg-gray-800/50 text-gray-500 border-gray-700 hover:border-sky-500/50 hover:text-sky-400"
+                        : "bg-sky-500/10 text-sky-400 border-sky-500/20 hover:bg-sky-500/20"
+                    }`}
+                  >
+                    @{a}
+                  </button>
+                );
+              })}
+              {brTeams.map((slug) => {
+                const label = teamLabel(slug);
+                const active = activeFilters.has(label);
+                return (
+                  <button
+                    key={slug}
+                    onClick={() => toggleFilter(label)}
+                    className={`rounded-full px-2.5 py-0.5 text-xs border transition ${
+                      active
+                        ? "bg-orange-500 text-white border-orange-500"
+                        : activeFilters.size > 0
+                        ? "bg-gray-800/50 text-gray-500 border-gray-700 hover:border-orange-500/50 hover:text-orange-400"
+                        : "bg-orange-500/10 text-orange-400 border-orange-500/20 hover:bg-orange-500/20"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
