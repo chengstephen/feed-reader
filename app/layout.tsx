@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Feed Reader",
-  description: "Personal feed reader for Twitter and Bleacher Report",
+  title: "Sports Feed Reader",
+  description: "Personal sports feed reader for Twitter and Bleacher Report",
 };
 
 export default function RootLayout({

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Parser from "rss-parser";
-import { NITTER_INSTANCES } from "@/lib/constants";
+import { NITTER_INSTANCES, BR_TEAMS } from "@/lib/constants";
 import type { FeedItem } from "@/lib/types";
 
 const parser = new Parser({
@@ -33,10 +33,14 @@ function extractImage(item: RawItem): string | undefined {
   if (item.mediaContent?.["$"]?.url) return item.mediaContent["$"].url;
   if (item.mediaThumbnail?.["$"]?.url) return item.mediaThumbnail["$"].url;
   if (item.enclosure?.url) return item.enclosure.url;
-  // Try to extract from content HTML
   const match = item.content?.match(/<img[^>]+src="([^"]+)"/);
   if (match) return match[1];
   return undefined;
+}
+
+// Strip trailing source attribution like " - ESPN" or " | The Athletic"
+function cleanTitle(title: string): string {
+  return title.replace(/\s[-|]\s+[^-|]+$/, "").trim();
 }
 
 async function fetchTwitterFeed(username: string): Promise<FeedItem[]> {
@@ -47,8 +51,8 @@ async function fetchTwitterFeed(username: string): Promise<FeedItem[]> {
       const timeout = setTimeout(() => controller.abort(), 8000);
       const res = await fetch(url, {
         signal: controller.signal,
-        headers: { "User-Agent": "FeedReader/1.0" },
-        next: { revalidate: 300 },
+        headers: { "User-Agent": "SportsFeedReader/1.0" },
+        next: { revalidate: 900 },
       });
       clearTimeout(timeout);
       if (!res.ok) continue;
@@ -72,24 +76,31 @@ async function fetchTwitterFeed(username: string): Promise<FeedItem[]> {
   return [];
 }
 
-async function fetchBRFeed(sport: string): Promise<FeedItem[]> {
+async function fetchTeamFeed(slug: string): Promise<FeedItem[]> {
+  // Resolve human-readable team name from slug for the search query
+  const team = BR_TEAMS.find((t) => t.slug === slug);
+  const label = team?.label ?? slug.replace(/-/g, " ");
+  const query = team ? `${team.label} ${team.sport}` : label;
+
+  const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
+
   try {
-    const url = `https://bleacherreport.com/${sport}/articles/feed`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
     const res = await fetch(url, {
       signal: controller.signal,
-      headers: { "User-Agent": "FeedReader/1.0" },
-      next: { revalidate: 300 },
+      headers: { "User-Agent": "SportsFeedReader/1.0" },
+      next: { revalidate: 900 },
     });
     clearTimeout(timeout);
     if (!res.ok) return [];
+
     const text = await res.text();
     const feed = await parser.parseString(text);
-    const label = feed.title?.replace("Bleacher Report - ", "").trim() ?? sport.toUpperCase();
+
     return (feed.items as RawItem[]).map((item, i) => ({
-      id: `br-${sport}-${i}-${item.pubDate ?? ""}`,
-      title: item.title ?? "(no title)",
+      id: `team-${slug}-${i}-${item.pubDate ?? ""}`,
+      title: item.title ? cleanTitle(item.title) : "(no title)",
       link: item.link ?? "#",
       pubDate: item.pubDate ? new Date(item.pubDate).toISOString() : new Date().toISOString(),
       snippet: item.contentSnippet?.slice(0, 200),
@@ -109,11 +120,11 @@ export async function GET(req: NextRequest) {
   const brParam = searchParams.get("br") ?? "";
 
   const twitterAccounts = twitterParam ? twitterParam.split(",").map((s) => s.trim()).filter(Boolean) : [];
-  const brSports = brParam ? brParam.split(",").map((s) => s.trim()).filter(Boolean) : [];
+  const teamSlugs = brParam ? brParam.split(",").map((s) => s.trim()).filter(Boolean) : [];
 
   const results = await Promise.allSettled([
     ...twitterAccounts.map((u) => fetchTwitterFeed(u)),
-    ...brSports.map((s) => fetchBRFeed(s)),
+    ...teamSlugs.map((s) => fetchTeamFeed(s)),
   ]);
 
   const allItems: FeedItem[] = [];
@@ -123,8 +134,15 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Sort newest first
-  allItems.sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
+  // Deduplicate by link (same article may appear across team feeds)
+  const seen = new Set<string>();
+  const deduped = allItems.filter((item) => {
+    if (seen.has(item.link)) return false;
+    seen.add(item.link);
+    return true;
+  });
 
-  return NextResponse.json({ items: allItems });
+  deduped.sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
+
+  return NextResponse.json({ items: deduped });
 }

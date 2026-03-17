@@ -5,8 +5,8 @@ import useSWR from "swr";
 import DateTabs from "./components/DateTabs";
 import FeedCard from "./components/FeedCard";
 import SettingsPanel from "./components/SettingsPanel";
-import { DEFAULT_BR_TEAMS, DEFAULT_TWITTER_ACCOUNTS, DAYS_SHOWN, REFRESH_INTERVAL_MS } from "@/lib/constants";
-import { BR_TEAMS } from "@/lib/constants";
+import PullToRefresh from "./components/PullToRefresh";
+import { DEFAULT_BR_TEAMS, DEFAULT_TWITTER_ACCOUNTS, DAYS_SHOWN, REFRESH_INTERVAL_MS, BR_TEAMS } from "@/lib/constants";
 import type { FeedItem } from "@/lib/types";
 
 const STORAGE_KEY = "feed-reader-config";
@@ -103,10 +103,10 @@ export default function HomePage() {
     }
   );
 
-  const handleRefresh = useCallback(() => {
+  const handleRefresh = useCallback(async () => {
     nextRefreshAt.current = Date.now() + REFRESH_INTERVAL_MS;
     setCountdown(REFRESH_INTERVAL_MS);
-    mutate();
+    await mutate();
   }, [mutate]);
 
   const handleSaveSettings = useCallback((accounts: string[], teams: string[]) => {
@@ -124,12 +124,12 @@ export default function HomePage() {
   const hasNoConfig = twitterAccounts.length === 0 && brTeams.length === 0;
 
   return (
-    <main className="min-h-screen bg-gray-950 text-gray-100">
+    <main className="flex h-screen flex-col bg-gray-950 text-gray-100 overflow-hidden">
       {/* Header */}
       <header className="sticky top-0 z-30 border-b border-gray-800 bg-gray-950/95 backdrop-blur">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
-            <h1 className="text-lg font-bold text-white tracking-tight">Feed Reader</h1>
+            <h1 className="text-lg font-bold text-white tracking-tight">Sports Feed Reader</h1>
             {!isLoading && !error && url && (
               <span className="text-xs text-gray-500">
                 refreshes in {formatCountdown(countdown)}
@@ -196,7 +196,7 @@ export default function HomePage() {
         )}
       </header>
 
-      <div className="mx-auto max-w-3xl px-4 py-5">
+      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden px-4 pt-5">
         {/* Empty state */}
         {hasNoConfig && (
           <div className="mt-20 flex flex-col items-center text-center">
@@ -227,38 +227,47 @@ export default function HomePage() {
               countsByDay={countsByDay}
             />
 
-            <div className="mt-5">
-              {isLoading && (
-                <div className="space-y-3">
-                  {Array.from({ length: 6 }).map((_, i) => (
-                    <div key={i} className="h-20 rounded-xl bg-gray-800 animate-pulse" />
-                  ))}
-                </div>
-              )}
+            <PullToRefresh onRefresh={handleRefresh} disabled={selectedDay !== 0}>
+              <div className="mt-5 pb-8">
+                {/* "Pull to refresh" hint — only on Today tab */}
+                {selectedDay === 0 && !isLoading && (
+                  <p className="mb-3 text-center text-xs text-gray-600 select-none">
+                    Pull down to refresh
+                  </p>
+                )}
 
-              {error && (
-                <div className="rounded-xl border border-red-900/50 bg-red-950/30 p-4 text-sm text-red-400">
-                  Failed to load feeds. Check your connection and try refreshing.
-                </div>
-              )}
+                {isLoading && (
+                  <div className="space-y-3">
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <div key={i} className="h-20 rounded-xl bg-gray-800 animate-pulse" />
+                    ))}
+                  </div>
+                )}
 
-              {!isLoading && !error && visibleItems.length === 0 && (
-                <div className="mt-16 flex flex-col items-center text-center text-gray-500">
-                  <svg className="mb-3 h-10 w-10 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <p className="text-sm">No articles found for this day.</p>
-                </div>
-              )}
+                {error && (
+                  <div className="rounded-xl border border-red-900/50 bg-red-950/30 p-4 text-sm text-red-400">
+                    Failed to load feeds. Check your connection and try refreshing.
+                  </div>
+                )}
 
-              {!isLoading && !error && visibleItems.length > 0 && (
-                <div className="space-y-2.5">
-                  {visibleItems.map((item) => (
-                    <FeedCard key={item.id} item={item} />
-                  ))}
-                </div>
-              )}
-            </div>
+                {!isLoading && !error && visibleItems.length === 0 && (
+                  <div className="mt-16 flex flex-col items-center text-center text-gray-500">
+                    <svg className="mb-3 h-10 w-10 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="text-sm">No articles found for this day.</p>
+                  </div>
+                )}
+
+                {!isLoading && !error && visibleItems.length > 0 && (
+                  <div className="space-y-2.5">
+                    {visibleItems.map((item) => (
+                      <FeedCard key={item.id} item={item} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </PullToRefresh>
           </>
         )}
       </div>
