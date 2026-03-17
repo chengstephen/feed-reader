@@ -1,67 +1,60 @@
 /**
- * Run once to log into Twitter and save cookies:
- *   npm run get-twitter-cookies
+ * Saves Twitter cookies from values you paste in from Chrome DevTools.
  *
- * A browser window will open. Log in, then come back here —
- * cookies are saved automatically to .twitter-cookies.json
+ *  1. In Chrome, go to x.com (make sure you're logged in)
+ *  2. Open DevTools → Application → Storage → Cookies → https://x.com
+ *  3. Find and copy the values for: auth_token, ct0, twid
+ *  4. Run:  npm run get-twitter-cookies
+ *  5. Paste each value when prompted
  */
 
-import { chromium } from "playwright";
 import fs from "fs";
 import path from "path";
+import * as readline from "readline";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const COOKIES_PATH = path.join(__dirname, "../.twitter-cookies.json");
 
+function prompt(rl: readline.Interface, question: string): Promise<string> {
+  return new Promise((resolve) => rl.question(question, resolve));
+}
+
 (async () => {
-  console.log("\n🐦 Twitter Cookie Extractor");
-  console.log("═══════════════════════════════════════");
-  console.log("A browser window is opening...");
-  console.log("1. Log into Twitter / X");
-  console.log("2. Once you're on your home feed, come back here");
-  console.log("3. Cookies will be saved automatically\n");
+  console.log("\n🐦 Twitter Cookie Setup");
+  console.log("═══════════════════════════════════════════════════════");
+  console.log("Steps:");
+  console.log("  1. Go to x.com in Chrome (make sure you're logged in)");
+  console.log("  2. Open DevTools  →  F12  or  Cmd+Option+I");
+  console.log("  3. Click: Application  →  Storage  →  Cookies  →  https://x.com");
+  console.log("  4. Paste the values below\n");
+  console.log("  TIP: Click on a row, then Cmd+C copies its Value column");
+  console.log("═══════════════════════════════════════════════════════\n");
 
-  const browser = await chromium.launch({
-    headless: false,
-    channel: "chrome", // uses system Chrome if available
-    args: ["--no-sandbox"],
-  }).catch(() =>
-    // fall back to Playwright's own Chromium
-    chromium.launch({ headless: false, args: ["--no-sandbox"] })
-  );
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-  const context = await browser.newContext({
-    userAgent:
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    viewport: { width: 1280, height: 800 },
-  });
+  const authToken = (await prompt(rl, "Paste auth_token value: ")).trim();
+  const ct0       = (await prompt(rl, "Paste ct0 value:        ")).trim();
+  const twid      = (await prompt(rl, "Paste twid value:       ")).trim();
 
-  const page = await context.newPage();
-  await page.goto("https://x.com/login");
+  rl.close();
 
-  // Poll until the user lands on the home feed
-  console.log("Waiting for you to log in...");
-  await page.waitForURL((url) => url.hostname === "x.com" && !url.pathname.includes("login"), {
-    timeout: 5 * 60 * 1000, // 5 min to log in
-  });
-
-  // Give the page a moment to settle and set all cookies
-  await page.waitForTimeout(2000);
-
-  const cookies = await context.cookies();
-  const twitterCookies = cookies.filter((c) => c.domain.includes("x.com") || c.domain.includes("twitter.com"));
-
-  if (twitterCookies.length === 0) {
-    console.error("❌ No Twitter cookies found. Make sure you're fully logged in.");
-    await browser.close();
+  if (!authToken || !ct0) {
+    console.error("\n❌ auth_token and ct0 are required.");
     process.exit(1);
   }
 
-  fs.writeFileSync(COOKIES_PATH, JSON.stringify(twitterCookies, null, 2));
+  const now = Date.now() / 1000;
+  const expires = now + 60 * 60 * 24 * 365; // 1 year
 
-  console.log(`\n✅ Saved ${twitterCookies.length} cookies to .twitter-cookies.json`);
-  console.log("You can now restart the dev server — Twitter feeds will load.\n");
+  const cookies = [
+    { name: "auth_token", value: authToken, domain: ".x.com", path: "/", expires, httpOnly: true,  secure: true, sameSite: "None" },
+    { name: "ct0",        value: ct0,        domain: ".x.com", path: "/", expires, httpOnly: false, secure: true, sameSite: "Lax"  },
+    ...(twid ? [{ name: "twid", value: twid, domain: ".x.com", path: "/", expires, httpOnly: true, secure: true, sameSite: "None" }] : []),
+  ];
 
-  await browser.close();
+  fs.writeFileSync(COOKIES_PATH, JSON.stringify(cookies, null, 2));
+
+  console.log(`\n✅ Saved to .twitter-cookies.json`);
+  console.log("Restart the dev server — Twitter feeds will now load.\n");
 })();
