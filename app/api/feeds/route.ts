@@ -45,35 +45,43 @@ function cleanTitle(title: string): string {
 }
 
 async function fetchTwitterFeed(username: string): Promise<FeedItem[]> {
-  try {
+  const TIMEOUT_MS = 20000;
+
+  const fetchTweets = async (): Promise<FeedItem[]> => {
     const s = await getScraper();
     const tweets: FeedItem[] = [];
 
-    for await (const tweet of s.getTweets(username, 40)) {
+    for await (const tweet of s.getTweets(username, 20)) {
       if (!tweet.id || !tweet.text) continue;
-      const pubDate = tweet.timeParsed
-        ? tweet.timeParsed.toISOString()
-        : new Date().toISOString();
-
+      const pubDate = tweet.timeParsed?.toISOString() ?? new Date().toISOString();
       const photo = tweet.photos?.[0]?.url;
       const video = tweet.videos?.[0]?.preview;
 
       tweets.push({
         id: `tw-${username}-${tweet.id}`,
-        title: tweet.text.slice(0, 140),
+        title: tweet.text.slice(0, 280),
         link: `https://x.com/${username}/status/${tweet.id}`,
         pubDate,
-        snippet: tweet.text.length > 140 ? tweet.text : undefined,
+        snippet: undefined,
         imageUrl: photo ?? video,
         source: "twitter" as const,
         sourceLabel: `@${username}`,
         author: tweet.name ?? username,
       });
     }
-
     return tweets;
+  };
+
+  try {
+    const result = await Promise.race([
+      fetchTweets(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Timeout after ${TIMEOUT_MS}ms`)), TIMEOUT_MS)
+      ),
+    ]);
+    return result;
   } catch (err) {
-    console.error(`Twitter scraper failed for @${username}, falling back to Google News:`, err);
+    console.error(`Twitter fetch failed for @${username}:`, (err as Error).message);
     return fetchTwitterFallback(username);
   }
 }

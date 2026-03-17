@@ -9,13 +9,32 @@ let initPromise: Promise<Scraper> | null = null;
 let lastFailedAt = 0;
 const RETRY_COOLDOWN_MS = 5 * 60 * 1000;
 
-function loadCookies(): string | null {
+interface SavedCookie {
+  name: string;
+  value: string;
+  domain?: string;
+  path?: string;
+  expires?: number;
+  httpOnly?: boolean;
+  secure?: boolean;
+  sameSite?: string;
+}
+
+function loadCookies(): string[] | null {
   try {
     if (!fs.existsSync(COOKIES_PATH)) return null;
     const raw = fs.readFileSync(COOKIES_PATH, "utf-8");
-    const cookies = JSON.parse(raw) as Array<{ name: string; value: string }>;
-    // Format the scraper expects: "name=value; name2=value2"
-    return cookies.map((c) => `${c.name}=${c.value}`).join("; ");
+    const cookies = JSON.parse(raw) as SavedCookie[];
+    // Convert to Set-Cookie header strings that tough-cookie can parse
+    return cookies.map((c) => {
+      let str = `${c.name}=${c.value}`;
+      str += `; Domain=${(c.domain ?? ".x.com").replace(/^\./, "")}`;
+      str += `; Path=${c.path ?? "/"}`;
+      if (c.secure) str += "; Secure";
+      if (c.httpOnly) str += "; HttpOnly";
+      if (c.sameSite) str += `; SameSite=${c.sameSite}`;
+      return str;
+    });
   } catch {
     return null;
   }
@@ -36,10 +55,7 @@ export async function getScraper(): Promise<Scraper> {
 
     if (cookieString) {
       // Use saved browser cookies — no login request needed
-      await s.setCookies(cookieString.split("; ").map((pair) => {
-        const [name, ...rest] = pair.split("=");
-        return { name, value: rest.join("="), domain: ".x.com", path: "/" };
-      }));
+      await s.setCookies(cookieString);
       console.log("Twitter: loaded cookies from .twitter-cookies.json");
     } else {
       // Fall back to password login (may be blocked by Cloudflare)
